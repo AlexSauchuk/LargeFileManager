@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "LargeFileGenerator": {
+      "commandName": "Project",
+      "commandLineArgs": "2048"
+    }
+  }
+}
