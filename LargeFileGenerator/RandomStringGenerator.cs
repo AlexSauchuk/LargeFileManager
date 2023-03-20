@@ -45,6 +45,13 @@ namespace LargeFileGenerator
             return resultChars;
         }
 
+        public static Span<char> GetRandomCharsSpan(byte stringLength, byte wordsNumber = 1)
+        {
+            var result = GetRandomChars(stringLength, wordsNumber);
+
+            return new Span<char>(result);
+        }
+
         public static string GetRandomString(byte stringLength, byte wordsNumber = 1)
         {
             var result = GetRandomChars(stringLength, wordsNumber);

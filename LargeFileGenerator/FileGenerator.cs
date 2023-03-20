@@ -21,34 +21,46 @@ namespace LargeFileGenerator
         {
             const short generateSizePerThread = 1024;
 
-            ulong lineNumber = 1, currentFileSize = 0;
-            ulong fileSizeBytes = (ulong)fileSizeMB * 1024 * 1024;
+            ulong lineNumber = 1;
+            ulong fileSizeBytes = (ulong)fileSizeMB * (1 << 20);
 
             //int threadCount = fileSizeMB / generateSizePerThread;
             //threadCount = fileSizeMB % generateSizePerThread != 0 ? threadCount + 1 : threadCount;
 
-            char[] fileLine = Array.Empty<char>();
-            int builderPreviousLength = 0;
-            StringBuilder builder = new StringBuilder(fileSizeMB * 1024 * 500);
+            var builder = GetFileChunk(ref lineNumber, fileSizeBytes, fileSizeMB * (1 << 19));
 
-            while (currentFileSize <= fileSizeBytes)
+            _filePath ??= GetNewFilePath(filename);
+            SaveData(_filePath, builder).GetAwaiter().GetResult();
+
+            return new FileInfo(_filePath);
+        }
+
+        private StringBuilder GetFileChunk(ref ulong startLineNumber, ulong fileChunkSizeBytes, int bufferSizeBytes = 10 * (1 << 20))
+        {
+            ulong currentFileSize = 0;
+            int builderPreviousLength = 0, lastFileLineLength = 0;
+
+            StringBuilder builder = new StringBuilder(bufferSizeBytes);
+
+            while (currentFileSize <= fileChunkSizeBytes)
             {
                 builderPreviousLength = builder.Length;
 
-                fileLine = GetFileNewLine(lineNumber);
-                builder.AppendFormat("{0}. ", lineNumber++)
+                var fileLine = GetFileNewLine(startLineNumber);
+                builder.AppendFormat("{0}. ", startLineNumber++)
                     .Append(fileLine)
                     .AppendLine();
 
                 currentFileSize = (ulong)builder.Length * sizeof(char);
+                lastFileLineLength = fileLine.Length;
             }
 
-            if (currentFileSize != fileSizeBytes)
+            if (currentFileSize != fileChunkSizeBytes)
             {
-                var length = (int)(currentFileSize - fileSizeBytes) / sizeof(char);
+                var length = (int)(currentFileSize - fileChunkSizeBytes) / sizeof(char);
                 var startIndex = builder.Length - length;
 
-                if (length >= fileLine.Length)
+                if (length >= lastFileLineLength)
                 {
                     var lastLineLength = builder.Length - builderPreviousLength;
 
@@ -61,13 +73,10 @@ namespace LargeFileGenerator
                 builder.Remove(startIndex, length);
             }
 
-            _filePath ??= GetNewFilePath(filename);
-            SaveData(_filePath, builder).GetAwaiter().GetResult();
-
-            return new FileInfo(_filePath);
+            return builder;
         }
 
-        private char[] GetFileNewLine(ulong currentLineNumber, byte? stringLength = null)
+        private Span<char> GetFileNewLine(ulong currentLineNumber, byte? stringLength = null)
         {
             const ushort duplicatesFrequencyNumber = 500;
             const ushort saveStringsFrequencyNumber = 100;
@@ -86,11 +95,11 @@ namespace LargeFileGenerator
                 wordsNumber = maxWordsNumber <= MaxWordsNumber ? maxWordsNumber : MaxWordsNumber;
             }
 
-            var result = RandomStringGenerator.GetRandomChars(stringLength.Value, wordsNumber);
+            var result = RandomStringGenerator.GetRandomCharsSpan(stringLength.Value, wordsNumber);
 
             if (currentLineNumber % saveStringsFrequencyNumber == 0)
             {
-                _stringBuffer.Add(result);
+                _stringBuffer.Add(result.ToArray());
             }
 
             return result;
@@ -108,7 +117,7 @@ namespace LargeFileGenerator
 
         private async Task SaveData(string filePath, StringBuilder builder)
         {
-            const int bufferSizeDivider = 10;
+            const int bufferSizeDivider = 5;
 
             int bufferSize = 1024;
 
@@ -123,8 +132,10 @@ namespace LargeFileGenerator
 
             Console.WriteLine($"Buffer size: {bufferSize}");
 
-            using StreamWriter writer = new StreamWriter(filePath, true, Encoding.Unicode, bufferSize);
-            await writer.WriteLineAsync(builder);
+            Encoding encoding = new UnicodeEncoding(true, true);
+
+            using StreamWriter writer = new StreamWriter(filePath, true, encoding, bufferSize);
+            await writer.WriteAsync(builder);
         }
     }
 }
